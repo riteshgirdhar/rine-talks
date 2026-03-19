@@ -92,14 +92,14 @@
   }
 
   /* Scroll reveal animation */
-  @supports (animation-timeline: scroll()) {
-    .scroll-reveal {
-      opacity: 0;
-      animation: revealFade linear both;
-      animation-timeline: view();
-      animation-range: entry 0% entry 80%;
-    }
-    @keyframes revealFade { to { opacity: 1; } }
+  .scroll-reveal {
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .scroll-reveal.revealed {
+    opacity: 1;
+    transform: translateY(0);
   }
 
   /* Gold gradient border for cards */
@@ -117,6 +117,11 @@
     -webkit-mask-composite: xor;
     mask-composite: exclude;
     pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  .gold-border-glow:hover::before {
+    opacity: 1;
   }
 
   /* Subtle grain texture overlay */
@@ -143,9 +148,9 @@
 
   /* Card hover lift */
   .card-lift {
-    transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
-                box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1),
-                border-color 180ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 220ms cubic-bezier(0.16, 1, 0.3, 1);
   }
   .card-lift:hover {
     transform: translateY(-4px);
@@ -175,11 +180,97 @@
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
     }
+    .scroll-reveal { opacity: 1; transform: none; }
   }
 
   /* Carousel hide scrollbar */
   .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
   .hide-scrollbar::-webkit-scrollbar { display: none; }
+
+  /* Skeleton loading shimmer */
+  @keyframes skeletonShimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  .skeleton {
+    background: linear-gradient(90deg, #1a1a1a 25%, #222222 50%, #1a1a1a 75%);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s ease-in-out infinite;
+    border-radius: 8px;
+  }
+
+  /* Content card filter animation */
+  .content-card-enter {
+    animation: cardFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @keyframes cardFadeIn {
+    from { opacity: 0; transform: scale(0.96) translateY(12px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
+  /* Platform pill active state */
+  .platform-pill {
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .platform-pill:hover {
+    background: rgba(201, 168, 76, 0.1);
+    border-color: rgba(201, 168, 76, 0.3);
+  }
+  .platform-pill.active {
+    background: rgba(201, 168, 76, 0.15);
+    border-color: #c9a84c;
+    color: #c9a84c;
+  }
+
+  /* Category tab active */
+  .category-tab {
+    position: relative;
+    transition: color 200ms ease;
+  }
+  .category-tab::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #c9a84c;
+    transform: scaleX(0);
+    transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .category-tab.active {
+    color: #c9a84c;
+  }
+  .category-tab.active::after {
+    transform: scaleX(1);
+  }
+
+  /* Masonry social wall */
+  .masonry-grid {
+    columns: 4;
+    column-gap: 16px;
+  }
+  .masonry-grid > * {
+    break-inside: avoid;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 1024px) { .masonry-grid { columns: 3; } }
+  @media (max-width: 768px) { .masonry-grid { columns: 2; } }
+  @media (max-width: 480px) { .masonry-grid { columns: 1; } }
+
+  /* Line clamp utility */
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
 </style>
 </head>
 <body>
@@ -187,7 +278,181 @@
 <div id="root"></div>
 
 <script type="text/babel">
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+/* ═══════════════════════════════════════════════════════════════════
+   CONFIGURATION — Edit these values to connect APIs & add content
+   ═══════════════════════════════════════════════════════════════════ */
+
+const CONFIG = {
+  YOUTUBE_API_KEY: '',          // Add your YouTube Data API v3 key
+  YOUTUBE_CHANNEL_ID: '',       // Will be filled with @rinetalks channel ID
+  YOUTUBE_HANDLE: '@rinetalks',
+  SOCIAL_LINKS: {
+    youtube: 'https://youtube.com/@rinetalks',
+    x: 'https://x.com/RineTalks',
+    instagram: 'https://instagram.com/rinetalks',
+    tiktok: 'https://tiktok.com/@rinetalks',
+  }
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   MANUAL CONTENT — Add entries here to populate the Content Hub
+   ═══════════════════════════════════════════════════════════════════ */
+
+const MANUAL_CONTENT = [
+  // Example entries — uncomment and fill when content is ready:
+  // {
+  //   id: '1',
+  //   platform: 'youtube',
+  //   category: 'real-estate',
+  //   title: 'Dubai Real Estate: What Investors Need to Know in 2026',
+  //   url: 'https://youtube.com/watch?v=...',
+  //   thumbnail: 'https://img.youtube.com/vi/.../maxresdefault.jpg',
+  //   date: '2026-03-20',
+  //   duration: '18:42',
+  //   views: '1.2K',
+  //   description: 'A deep dive into the Dubai property market...'
+  // },
+  // {
+  //   id: '2',
+  //   platform: 'instagram',
+  //   category: 'dubai-uae',
+  //   title: 'Behind the scenes at GITEX 2026',
+  //   url: 'https://instagram.com/p/...',
+  //   thumbnail: '',
+  //   date: '2026-03-19',
+  //   description: 'Exploring the future of tech in the UAE...'
+  // },
+  // {
+  //   id: '3',
+  //   platform: 'x',
+  //   category: 'geopolitics',
+  //   title: '',
+  //   url: 'https://x.com/RineTalks/status/...',
+  //   text: 'The shifting dynamics in the Middle East...',
+  //   date: '2026-03-18',
+  // },
+  // {
+  //   id: '4',
+  //   platform: 'tiktok',
+  //   category: 'ai-tech',
+  //   title: 'AI is changing everything — here\'s how',
+  //   url: 'https://tiktok.com/@rinetalks/video/...',
+  //   thumbnail: '',
+  //   date: '2026-03-17',
+  //   duration: '0:58',
+  // },
+];
+
+/* ═══════════════════════════════════════════════════════════════════
+   PLATFORM ICON SVGs
+   ═══════════════════════════════════════════════════════════════════ */
+
+function YouTubeIcon({ size = 18, className = "" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+    </svg>
+  );
+}
+
+function XIcon({ size = 16, className = "" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+    </svg>
+  );
+}
+
+function InstagramIcon({ size = 18, className = "" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/>
+    </svg>
+  );
+}
+
+function TikTokIcon({ size = 18, className = "" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 0010.86 4.46V13.2a8.16 8.16 0 005.58 2.2V12a4.85 4.85 0 01-3.77-1.54V6.69h3.77z"/>
+    </svg>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SCROLL REVEAL HOOK
+   ═══════════════════════════════════════════════════════════════════ */
+
+function useScrollReveal() {
+  useEffect(() => {
+    const els = document.querySelectorAll('.scroll-reveal');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('revealed');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+    els.forEach(el => observer.observe(el));
+    return () => observer.disconnect();
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   YOUTUBE API HOOK
+   ═══════════════════════════════════════════════════════════════════ */
+
+function useYouTubeData() {
+  const [videos, setVideos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [channelStats, setChannelStats] = useState(null);
+
+  useEffect(() => {
+    if (!CONFIG.YOUTUBE_API_KEY || !CONFIG.YOUTUBE_CHANNEL_ID) {
+      setLoading(false);
+      return;
+    }
+
+    async function fetchData() {
+      try {
+        // Fetch channel info
+        const channelRes = await fetch(
+          `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet&id=${CONFIG.YOUTUBE_CHANNEL_ID}&key=${CONFIG.YOUTUBE_API_KEY}`
+        );
+        const channelData = await channelRes.json();
+        if (channelData.items && channelData.items.length > 0) {
+          setChannelStats(channelData.items[0].statistics);
+        }
+
+        // Fetch latest videos
+        const searchRes = await fetch(
+          `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${CONFIG.YOUTUBE_CHANNEL_ID}&maxResults=12&order=date&type=video&key=${CONFIG.YOUTUBE_API_KEY}`
+        );
+        const searchData = await searchRes.json();
+        
+        if (searchData.items) {
+          const videoIds = searchData.items.map(i => i.id.videoId).join(',');
+          const detailsRes = await fetch(
+            `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,statistics,snippet&id=${videoIds}&key=${CONFIG.YOUTUBE_API_KEY}`
+          );
+          const detailsData = await detailsRes.json();
+          setVideos(detailsData.items || []);
+        }
+      } catch (err) {
+        console.error('YouTube API error:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchData();
+  }, []);
+
+  return { videos, loading, channelStats };
+}
 
 /* ─── SVG Logo ─── */
 function RineTalksLogo({ className = "" }) {
@@ -205,7 +470,33 @@ function RineTalksLogo({ className = "" }) {
   );
 }
 
-/* ─── Navigation ─── */
+/* ─── Social Icon Row Component ─── */
+function SocialIconRow({ size = 'md', className = "" }) {
+  const sz = size === 'sm' ? 'w-9 h-9' : 'w-11 h-11';
+  const iconSz = size === 'sm' ? 15 : 18;
+  const items = [
+    { href: CONFIG.SOCIAL_LINKS.youtube, label: 'YouTube', Icon: YouTubeIcon },
+    { href: CONFIG.SOCIAL_LINKS.instagram, label: 'Instagram', Icon: InstagramIcon },
+    { href: CONFIG.SOCIAL_LINKS.x, label: 'X / Twitter', Icon: XIcon },
+    { href: CONFIG.SOCIAL_LINKS.tiktok, label: 'TikTok', Icon: TikTokIcon },
+  ];
+  return (
+    <div className={`flex items-center gap-3 ${className}`}>
+      {items.map(({ href, label, Icon }) => (
+        <a key={label} href={href} target="_blank" rel="noopener noreferrer"
+           className={`${sz} rounded-full border border-white/15 flex items-center justify-center text-smoke hover:text-gold hover:border-gold/40 transition-all duration-200`}
+           aria-label={label}>
+          <Icon size={iconSz} />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   NAVIGATION
+   ═══════════════════════════════════════════════════════════════════ */
+
 function Navigation() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -217,8 +508,9 @@ function Navigation() {
   }, []);
 
   const links = [
+    { label: 'Home', href: '#' },
     { label: 'Topics', href: '#pillars' },
-    { label: 'Episodes', href: '#episodes' },
+    { label: 'Content', href: '#content-hub' },
     { label: 'About', href: '#about' },
     { label: 'Subscribe', href: '#newsletter' }
   ];
@@ -240,9 +532,14 @@ function Navigation() {
               {l.label}
             </a>
           ))}
-          <a href="https://youtube.com/@rinetalks" target="_blank" rel="noopener noreferrer"
+        </div>
+
+        {/* Desktop social + CTA */}
+        <div className="hidden md:flex items-center gap-4">
+          <SocialIconRow size="sm" />
+          <a href={CONFIG.SOCIAL_LINKS.youtube} target="_blank" rel="noopener noreferrer"
              className="btn-gold inline-flex items-center gap-2 px-5 py-2.5 bg-gold text-charcoal-900 font-semibold text-sm rounded-lg tracking-wide">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+            <YouTubeIcon size={18} />
             Subscribe
           </a>
         </div>
@@ -267,7 +564,8 @@ function Navigation() {
               {l.label}
             </a>
           ))}
-          <a href="https://youtube.com/@rinetalks" target="_blank" rel="noopener noreferrer"
+          <SocialIconRow size="sm" className="pt-2" />
+          <a href={CONFIG.SOCIAL_LINKS.youtube} target="_blank" rel="noopener noreferrer"
              className="btn-gold inline-flex items-center gap-2 px-5 py-3 bg-gold text-charcoal-900 font-semibold text-sm rounded-lg tracking-wide mt-2">
             Subscribe on YouTube
           </a>
@@ -277,7 +575,10 @@ function Navigation() {
   );
 }
 
-/* ─── Hero Section ─── */
+/* ═══════════════════════════════════════════════════════════════════
+   HERO SECTION
+   ═══════════════════════════════════════════════════════════════════ */
+
 function Hero() {
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden grain">
@@ -310,27 +611,43 @@ function Hero() {
 
         {/* CTAs */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <a href="https://youtube.com/@rinetalks" target="_blank" rel="noopener noreferrer"
+          <a href={CONFIG.SOCIAL_LINKS.youtube} target="_blank" rel="noopener noreferrer"
              className="btn-gold inline-flex items-center gap-3 px-8 py-4 bg-gold text-charcoal-900 font-bold text-base rounded-xl tracking-wide">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+            <YouTubeIcon size={22} />
             Subscribe on YouTube
           </a>
-          <a href="#pillars"
+          <a href="#content-hub"
              className="inline-flex items-center gap-2 px-8 py-4 border border-white/20 text-white font-medium text-base rounded-xl hover:bg-white/5 hover:border-gold/40 transition-all duration-200 tracking-wide">
-            Explore Topics
+            Explore Content
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
           </a>
         </div>
 
-        {/* Stats bar */}
-        <div className="mt-16 flex flex-wrap items-center justify-center gap-8 md:gap-12">
+        {/* Social platform follow buttons */}
+        <div className="flex items-center justify-center gap-3 mt-8">
           {[
-            { num: '50+', label: 'Episodes' },
-            { num: '10K+', label: 'Subscribers' },
+            { href: CONFIG.SOCIAL_LINKS.youtube, Icon: YouTubeIcon, label: 'YouTube', color: 'hover:bg-red-600/20 hover:border-red-500/50' },
+            { href: CONFIG.SOCIAL_LINKS.instagram, Icon: InstagramIcon, label: 'Instagram', color: 'hover:bg-pink-600/20 hover:border-pink-500/50' },
+            { href: CONFIG.SOCIAL_LINKS.x, Icon: XIcon, label: 'X', color: 'hover:bg-white/10 hover:border-white/30' },
+            { href: CONFIG.SOCIAL_LINKS.tiktok, Icon: TikTokIcon, label: 'TikTok', color: 'hover:bg-cyan-500/20 hover:border-cyan-400/50' },
+          ].map(({ href, Icon, label, color }) => (
+            <a key={label} href={href} target="_blank" rel="noopener noreferrer"
+               className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 text-smoke text-xs font-medium tracking-wide transition-all duration-200 ${color}`}>
+              <Icon size={14} />
+              <span className="hidden sm:inline">{label}</span>
+            </a>
+          ))}
+        </div>
+
+        {/* Stats bar */}
+        <div className="mt-14 flex flex-wrap items-center justify-center gap-8 md:gap-12">
+          {[
+            { num: 'New Channel', label: 'Just Launched' },
             { num: '5', label: 'Core Topics' },
+            { num: 'Multi-Platform', label: 'Everywhere' },
           ].map(s => (
             <div key={s.label} className="text-center">
-              <div className="text-2xl md:text-3xl font-display font-bold text-gold">{s.num}</div>
+              <div className="text-xl md:text-2xl font-display font-bold text-gold">{s.num}</div>
               <div className="text-xs text-smoke uppercase tracking-widest mt-1">{s.label}</div>
             </div>
           ))}
@@ -354,7 +671,514 @@ function GoldDivider() {
   );
 }
 
-/* ─── The 5 Pillars ─── */
+/* ═══════════════════════════════════════════════════════════════════
+   CONTENT HUB SECTION
+   ═══════════════════════════════════════════════════════════════════ */
+
+const CATEGORIES = [
+  { id: 'all', label: 'All' },
+  { id: 'real-estate', label: 'Real Estate' },
+  { id: 'ai-tech', label: 'AI & Tech' },
+  { id: 'geopolitics', label: 'Geopolitics' },
+  { id: 'dubai-uae', label: 'Dubai & UAE' },
+  { id: 'expert-interviews', label: 'Expert Interviews' },
+];
+
+const PLATFORMS = [
+  { id: 'all', label: 'All Platforms', Icon: null },
+  { id: 'youtube', label: 'YouTube', Icon: YouTubeIcon },
+  { id: 'instagram', label: 'Instagram', Icon: InstagramIcon },
+  { id: 'x', label: 'X', Icon: XIcon },
+  { id: 'tiktok', label: 'TikTok', Icon: TikTokIcon },
+];
+
+function PlatformBadge({ platform }) {
+  const map = {
+    youtube: { bg: 'bg-red-600', Icon: YouTubeIcon },
+    instagram: { bg: 'bg-gradient-to-br from-purple-600 to-pink-500', Icon: InstagramIcon },
+    x: { bg: 'bg-neutral-800', Icon: XIcon },
+    tiktok: { bg: 'bg-black border border-white/20', Icon: TikTokIcon },
+  };
+  const p = map[platform];
+  if (!p) return null;
+  return (
+    <div className={`absolute top-3 left-3 z-10 w-7 h-7 rounded-lg ${p.bg} flex items-center justify-center shadow-md`}>
+      <p.Icon size={13} className="text-white" />
+    </div>
+  );
+}
+
+/* YouTube placeholder card */
+function YouTubePlaceholderCard({ index }) {
+  const titles = [
+    'The Future of Dubai Real Estate',
+    'How AI Will Transform Construction',
+    'Geopolitical Shifts Impacting Markets',
+    'Why Top Talent Moves to Dubai',
+    'Expert Interview: Tech & Innovation',
+    'Understanding UAE Economic Vision',
+  ];
+  return (
+    <a href={CONFIG.SOCIAL_LINKS.youtube} target="_blank" rel="noopener noreferrer"
+       className="block group content-card-enter" style={{ animationDelay: `${index * 60}ms` }}>
+      <div className="card-lift gold-border-glow rounded-xl overflow-hidden bg-charcoal-700/50">
+        <div className="relative aspect-video bg-gradient-to-br from-charcoal-600 via-charcoal-700 to-charcoal-800 flex items-center justify-center">
+          <PlatformBadge platform="youtube" />
+          <div className="text-center">
+            <div className="w-14 h-14 rounded-full bg-gold/20 border border-gold/30 flex items-center justify-center mx-auto group-hover:bg-gold/30 transition-all">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="#c9a84c"><path d="M8 5v14l11-7z"/></svg>
+            </div>
+            <p className="text-xs text-gold/60 mt-3 font-medium tracking-wider uppercase">Coming Soon</p>
+          </div>
+          <div className="absolute bottom-2 right-2 px-2 py-0.5 bg-black/70 rounded text-[10px] text-white/70 font-mono">--:--</div>
+        </div>
+        <div className="p-4">
+          <h4 className="text-sm font-semibold text-white/80 line-clamp-2 group-hover:text-gold transition-colors">{titles[index % titles.length]}</h4>
+          <div className="flex items-center gap-2 mt-2 text-xs text-smoke/60">
+            <span>Rine Talks</span>
+            <span>·</span>
+            <span>Coming Soon</span>
+          </div>
+        </div>
+      </div>
+    </a>
+  );
+}
+
+/* Instagram placeholder card */
+function InstagramPlaceholderCard({ index }) {
+  const gradients = [
+    'from-purple-900/40 via-pink-900/30 to-orange-900/20',
+    'from-indigo-900/40 via-purple-800/30 to-pink-900/20',
+  ];
+  return (
+    <a href={CONFIG.SOCIAL_LINKS.instagram} target="_blank" rel="noopener noreferrer"
+       className="block group content-card-enter" style={{ animationDelay: `${index * 60}ms` }}>
+      <div className="card-lift gold-border-glow rounded-xl overflow-hidden bg-charcoal-700/50">
+        <div className={`relative aspect-square bg-gradient-to-br ${gradients[index % gradients.length]} flex items-center justify-center`}>
+          <PlatformBadge platform="instagram" />
+          <div className="text-center px-6">
+            <InstagramIcon size={32} className="text-white/20 mx-auto mb-3" />
+            <p className="text-sm text-white/50 font-medium">Follow @rinetalks</p>
+            <p className="text-xs text-white/30 mt-1">Content coming soon</p>
+          </div>
+        </div>
+      </div>
+    </a>
+  );
+}
+
+/* X/Twitter placeholder card */
+function XPlaceholderCard({ index }) {
+  return (
+    <a href={CONFIG.SOCIAL_LINKS.x} target="_blank" rel="noopener noreferrer"
+       className="block group content-card-enter" style={{ animationDelay: `${index * 60}ms` }}>
+      <div className="card-lift gold-border-glow rounded-xl overflow-hidden bg-charcoal-700/50 p-5">
+        <PlatformBadge platform="x" />
+        <div className="flex items-start gap-3 mt-6">
+          <div className="w-10 h-10 rounded-full bg-gold/20 border border-gold/30 flex items-center justify-center flex-shrink-0">
+            <span className="font-display font-bold text-gold text-xs">RT</span>
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-white">Rine Talks</span>
+              <span className="text-xs text-smoke/50">@RineTalks</span>
+            </div>
+            <p className="text-sm text-smoke/60 mt-2 leading-relaxed">
+              Launching soon — deep conversations on real estate, AI, geopolitics, and more from Dubai. Stay tuned. 🎙️
+            </p>
+            <p className="text-xs text-smoke/30 mt-3">Follow for updates</p>
+          </div>
+        </div>
+      </div>
+    </a>
+  );
+}
+
+/* TikTok placeholder card */
+function TikTokPlaceholderCard({ index }) {
+  return (
+    <a href={CONFIG.SOCIAL_LINKS.tiktok} target="_blank" rel="noopener noreferrer"
+       className="block group content-card-enter" style={{ animationDelay: `${index * 60}ms` }}>
+      <div className="card-lift gold-border-glow rounded-xl overflow-hidden bg-charcoal-700/50">
+        <div className="relative aspect-[9/14] bg-gradient-to-b from-charcoal-600 via-charcoal-700 to-charcoal-800 flex items-center justify-center">
+          <PlatformBadge platform="tiktok" />
+          <div className="text-center px-6">
+            <TikTokIcon size={32} className="text-white/20 mx-auto mb-3" />
+            <p className="text-sm text-white/50 font-medium">@rinetalks</p>
+            <p className="text-xs text-white/30 mt-1">TikTok coming soon</p>
+          </div>
+        </div>
+      </div>
+    </a>
+  );
+}
+
+/* Real content card */
+function ContentCard({ item, index }) {
+  if (item.platform === 'youtube') {
+    return (
+      <a href={item.url} target="_blank" rel="noopener noreferrer"
+         className="block group content-card-enter" style={{ animationDelay: `${index * 60}ms` }}>
+        <div className="card-lift gold-border-glow rounded-xl overflow-hidden bg-charcoal-700/50">
+          <div className="relative aspect-video bg-charcoal-600 overflow-hidden">
+            <PlatformBadge platform="youtube" />
+            {item.thumbnail && <img src={item.thumbnail} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />}
+            {item.duration && <div className="absolute bottom-2 right-2 px-2 py-0.5 bg-black/80 rounded text-[10px] text-white font-mono">{item.duration}</div>}
+          </div>
+          <div className="p-4">
+            <h4 className="text-sm font-semibold text-white line-clamp-2 group-hover:text-gold transition-colors">{item.title}</h4>
+            <div className="flex items-center gap-2 mt-2 text-xs text-smoke/60">
+              {item.views && <span>{item.views} views</span>}
+              {item.views && <span>·</span>}
+              <span>{item.date}</span>
+            </div>
+          </div>
+        </div>
+      </a>
+    );
+  }
+  if (item.platform === 'instagram') {
+    return (
+      <a href={item.url} target="_blank" rel="noopener noreferrer"
+         className="block group content-card-enter" style={{ animationDelay: `${index * 60}ms` }}>
+        <div className="card-lift gold-border-glow rounded-xl overflow-hidden bg-charcoal-700/50">
+          <div className="relative aspect-square bg-gradient-to-br from-purple-900/40 to-pink-900/20 overflow-hidden">
+            <PlatformBadge platform="instagram" />
+            {item.thumbnail && <img src={item.thumbnail} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />}
+          </div>
+          <div className="p-4">
+            <p className="text-sm text-smoke line-clamp-2">{item.description || item.title}</p>
+            <p className="text-xs text-smoke/50 mt-2">{item.date}</p>
+          </div>
+        </div>
+      </a>
+    );
+  }
+  if (item.platform === 'x') {
+    return (
+      <a href={item.url} target="_blank" rel="noopener noreferrer"
+         className="block group content-card-enter" style={{ animationDelay: `${index * 60}ms` }}>
+        <div className="card-lift gold-border-glow rounded-xl overflow-hidden bg-charcoal-700/50 p-5">
+          <PlatformBadge platform="x" />
+          <div className="flex items-start gap-3 mt-6">
+            <div className="w-10 h-10 rounded-full bg-gold/20 border border-gold/30 flex items-center justify-center flex-shrink-0">
+              <span className="font-display font-bold text-gold text-xs">RT</span>
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-white">Rine Talks</span>
+                <span className="text-xs text-smoke/50">@RineTalks</span>
+              </div>
+              <p className="text-sm text-smoke mt-2 leading-relaxed">{item.text || item.title}</p>
+              <p className="text-xs text-smoke/40 mt-2">{item.date}</p>
+            </div>
+          </div>
+        </div>
+      </a>
+    );
+  }
+  if (item.platform === 'tiktok') {
+    return (
+      <a href={item.url} target="_blank" rel="noopener noreferrer"
+         className="block group content-card-enter" style={{ animationDelay: `${index * 60}ms` }}>
+        <div className="card-lift gold-border-glow rounded-xl overflow-hidden bg-charcoal-700/50">
+          <div className="relative aspect-[9/14] bg-gradient-to-b from-charcoal-600 to-charcoal-800 overflow-hidden">
+            <PlatformBadge platform="tiktok" />
+            {item.thumbnail && <img src={item.thumbnail} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />}
+          </div>
+          <div className="p-4">
+            <p className="text-sm text-white line-clamp-2">{item.title}</p>
+            {item.duration && <p className="text-xs text-smoke/50 mt-1">{item.duration}</p>}
+          </div>
+        </div>
+      </a>
+    );
+  }
+  return null;
+}
+
+function ContentHub() {
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [activePlatform, setActivePlatform] = useState('all');
+  const [visibleCount, setVisibleCount] = useState(6);
+
+  const hasContent = MANUAL_CONTENT.length > 0;
+
+  const filteredContent = useMemo(() => {
+    return MANUAL_CONTENT.filter(item => {
+      if (activeCategory !== 'all' && item.category !== activeCategory) return false;
+      if (activePlatform !== 'all' && item.platform !== activePlatform) return false;
+      return true;
+    });
+  }, [activeCategory, activePlatform]);
+
+  const handleCategoryChange = (id) => {
+    setActiveCategory(id);
+    setVisibleCount(6);
+  };
+
+  const handlePlatformChange = (id) => {
+    setActivePlatform(id);
+    setVisibleCount(6);
+  };
+
+  return (
+    <section id="content-hub" className="relative py-24 md:py-32">
+      <div className="max-w-7xl mx-auto px-6">
+        {/* Header */}
+        <div className="text-center mb-12 scroll-reveal">
+          <span className="text-xs font-medium text-gold tracking-[0.25em] uppercase">Watch, Listen, Read</span>
+          <h2 className="font-display font-bold text-white mt-3"
+              style={{ fontSize: 'clamp(1.75rem, 1.2rem + 2vw, 3rem)' }}>
+            Latest Content
+          </h2>
+          <p className="text-smoke mt-4 max-w-xl mx-auto" style={{ fontSize: 'clamp(0.95rem, 0.9rem + 0.25vw, 1.1rem)' }}>
+            Fresh episodes, shorts, and posts from all platforms
+          </p>
+        </div>
+
+        {/* Category filter tabs */}
+        <div className="scroll-reveal flex items-center md:justify-center gap-1 mb-6 overflow-x-auto hide-scrollbar pb-2 px-0">
+          {CATEGORIES.map(cat => (
+            <button key={cat.id}
+                    onClick={() => handleCategoryChange(cat.id)}
+                    className={`category-tab px-4 py-2 text-sm font-medium tracking-wide whitespace-nowrap rounded-lg transition-all ${
+                      activeCategory === cat.id ? 'active text-gold bg-gold/10' : 'text-smoke/70 hover:text-white hover:bg-white/5'
+                    }`}>
+              {cat.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Platform filter pills */}
+        <div className="scroll-reveal flex items-center md:justify-center gap-2 mb-12 flex-wrap">
+          {PLATFORMS.map(plat => (
+            <button key={plat.id}
+                    onClick={() => handlePlatformChange(plat.id)}
+                    className={`platform-pill inline-flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-medium tracking-wide transition-all ${
+                      activePlatform === plat.id 
+                        ? 'active border-gold bg-gold/15 text-gold' 
+                        : 'border-white/10 text-smoke/60 hover:border-white/20'
+                    }`}>
+              {plat.Icon && <plat.Icon size={13} />}
+              {plat.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Content grid */}
+        {hasContent ? (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredContent.slice(0, visibleCount).map((item, i) => (
+                <ContentCard key={item.id} item={item} index={i} />
+              ))}
+            </div>
+            {filteredContent.length > visibleCount && (
+              <div className="text-center mt-10">
+                <button onClick={() => setVisibleCount(prev => prev + 6)}
+                        className="inline-flex items-center gap-2 px-8 py-3 border border-white/15 text-smoke font-medium text-sm rounded-xl hover:bg-white/5 hover:border-gold/30 hover:text-gold transition-all duration-200 tracking-wide">
+                  Load More
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          /* Empty state — beautiful placeholder grid */
+          <div>
+            {activePlatform === 'all' || activePlatform === 'youtube' ? (
+              <div className="mb-8">
+                {activePlatform === 'all' && (
+                  <div className="flex items-center gap-2 mb-4">
+                    <YouTubeIcon size={16} className="text-red-500" />
+                    <span className="text-xs font-medium text-smoke/50 uppercase tracking-wider">YouTube</span>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {[0, 1, 2].map(i => <YouTubePlaceholderCard key={`yt-${i}`} index={i} />)}
+                </div>
+              </div>
+            ) : null}
+
+            {activePlatform === 'all' || activePlatform === 'instagram' ? (
+              <div className="mb-8">
+                {activePlatform === 'all' && (
+                  <div className="flex items-center gap-2 mb-4">
+                    <InstagramIcon size={16} className="text-pink-400" />
+                    <span className="text-xs font-medium text-smoke/50 uppercase tracking-wider">Instagram</span>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {[0, 1].map(i => <InstagramPlaceholderCard key={`ig-${i}`} index={i} />)}
+                </div>
+              </div>
+            ) : null}
+
+            {activePlatform === 'all' || activePlatform === 'x' ? (
+              <div className="mb-8">
+                {activePlatform === 'all' && (
+                  <div className="flex items-center gap-2 mb-4">
+                    <XIcon size={14} className="text-white/60" />
+                    <span className="text-xs font-medium text-smoke/50 uppercase tracking-wider">X / Twitter</span>
+                  </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl">
+                  {[0].map(i => <XPlaceholderCard key={`x-${i}`} index={i} />)}
+                </div>
+              </div>
+            ) : null}
+
+            {activePlatform === 'all' || activePlatform === 'tiktok' ? (
+              <div className="mb-8">
+                {activePlatform === 'all' && (
+                  <div className="flex items-center gap-2 mb-4">
+                    <TikTokIcon size={16} className="text-cyan-400" />
+                    <span className="text-xs font-medium text-smoke/50 uppercase tracking-wider">TikTok</span>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {[0].map(i => <TikTokPlaceholderCard key={`tt-${i}`} index={i} />)}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   YOUTUBE SHOWCASE
+   ═══════════════════════════════════════════════════════════════════ */
+
+function YouTubeShowcase() {
+  const { videos, loading } = useYouTubeData();
+  const carouselRef = useRef(null);
+
+  const scroll = (dir) => {
+    if (carouselRef.current) {
+      carouselRef.current.scrollBy({ left: dir * 260, behavior: 'smooth' });
+    }
+  };
+
+  const hasApiVideos = videos.length > 0;
+
+  /* Placeholder shorts data */
+  const placeholderShorts = [
+    { title: 'AI Will Change Dubai Forever', tag: 'AI & Tech' },
+    { title: 'Real Estate Bubble or Boom?', tag: 'Real Estate' },
+    { title: 'Why UAE Attracts Global Talent', tag: 'Dubai & UAE' },
+    { title: 'The Geopolitics of Oil in 2026', tag: 'Geopolitics' },
+    { title: 'Construction Tech Revolution', tag: 'Expert Interview' },
+  ];
+
+  return (
+    <section id="episodes" className="relative py-24 md:py-32 bg-charcoal-800/50">
+      <div className="max-w-7xl mx-auto px-6">
+        {/* Header */}
+        <div className="text-center mb-16 scroll-reveal">
+          <span className="text-xs font-medium text-gold tracking-[0.25em] uppercase">Watch Now</span>
+          <h2 className="font-display font-bold text-white mt-3"
+              style={{ fontSize: 'clamp(1.75rem, 1.2rem + 2vw, 3rem)' }}>
+            YouTube Showcase
+          </h2>
+          <p className="text-smoke mt-4 max-w-lg mx-auto" style={{ fontSize: 'clamp(0.95rem, 0.9rem + 0.25vw, 1.1rem)' }}>
+            Full episodes, deep dives, and bite-sized shorts — all in one place.
+          </p>
+        </div>
+
+        {/* Featured Episode */}
+        <div className="mb-16 scroll-reveal">
+          <h3 className="text-sm font-medium text-gold uppercase tracking-widest mb-4">Featured Episode</h3>
+          <div className="relative rounded-2xl overflow-hidden bg-charcoal-700 gold-border-glow">
+            {hasApiVideos ? (
+              <div className="aspect-video">
+                <iframe
+                  width="100%" height="100%"
+                  src={`https://www.youtube.com/embed/${videos[0].id}?rel=0`}
+                  title={videos[0].snippet.title}
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  className="w-full h-full"
+                />
+              </div>
+            ) : (
+              <div className="aspect-video bg-charcoal-600 flex items-center justify-center relative group cursor-pointer"
+                   onClick={() => window.open(CONFIG.SOCIAL_LINKS.youtube, '_blank')}>
+                <div className="absolute inset-0 bg-gradient-to-br from-charcoal-700 via-charcoal-800 to-charcoal-900" />
+                <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
+                  <div className="w-20 h-20 rounded-full bg-gold/20 border-2 border-gold/40 flex items-center justify-center group-hover:bg-gold/30 group-hover:scale-110 transition-all duration-300">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="#c9a84c"><path d="M8 5v14l11-7z"/></svg>
+                  </div>
+                  <div className="mt-6 text-center">
+                    <p className="text-xs text-gold/60 font-medium tracking-widest uppercase mb-2">First Episode</p>
+                    <p className="text-lg md:text-xl font-display font-semibold text-white">Coming Soon to Rine Talks</p>
+                    <p className="text-sm text-smoke mt-2">Subscribe to be the first to watch</p>
+                  </div>
+                </div>
+                <div className="absolute top-4 left-4 z-10 inline-flex items-center gap-2 px-3 py-1 bg-gold/10 border border-gold/30 text-gold text-xs font-bold rounded-md uppercase tracking-wider">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gold animate-pulse" />
+                  Premiering Soon
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Shorts Carousel */}
+        <div className="scroll-reveal">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-sm font-medium text-gold uppercase tracking-widest">Shorts</h3>
+            <div className="flex gap-2">
+              <button onClick={() => scroll(-1)} aria-label="Scroll left"
+                      className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-white hover:bg-white/5 hover:border-gold/30 transition-all duration-200">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+              </button>
+              <button onClick={() => scroll(1)} aria-label="Scroll right"
+                      className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-white hover:bg-white/5 hover:border-gold/30 transition-all duration-200">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div ref={carouselRef} className="flex gap-4 overflow-x-auto hide-scrollbar pb-4 snap-x snap-mandatory">
+            {placeholderShorts.map((s, i) => (
+              <div key={i} className="flex-none w-52 md:w-56 snap-start">
+                <a href={CONFIG.SOCIAL_LINKS.youtube} target="_blank" rel="noopener noreferrer"
+                   className="block card-lift gold-border-glow rounded-2xl overflow-hidden bg-charcoal-700/60 group">
+                  <div className="aspect-[9/16] bg-gradient-to-b from-charcoal-600 to-charcoal-800 relative flex items-center justify-center">
+                    <div className="w-14 h-14 rounded-full bg-gold/15 flex items-center justify-center group-hover:bg-gold/25 transition-all duration-200 border border-gold/20">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="#c9a84c"><path d="M8 5v14l11-7z"/></svg>
+                    </div>
+                    <div className="absolute top-3 left-3 px-2 py-0.5 bg-red-600/80 text-white text-[10px] font-bold rounded uppercase tracking-wider">
+                      Shorts
+                    </div>
+                    <div className="absolute bottom-3 left-3 right-3">
+                      <span className="inline-block px-2 py-0.5 bg-black/50 rounded text-[10px] text-gold/70 font-medium">{s.tag}</span>
+                    </div>
+                  </div>
+                  <div className="p-4">
+                    <p className="text-sm font-medium text-white/80 leading-snug line-clamp-2 group-hover:text-gold transition-colors">{s.title}</p>
+                    <p className="text-xs text-smoke/40 mt-1.5">Coming soon</p>
+                  </div>
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   THE 5 PILLARS
+   ═══════════════════════════════════════════════════════════════════ */
+
 function Pillars() {
   const pillars = [
     {
@@ -392,7 +1216,6 @@ function Pillars() {
   return (
     <section id="pillars" className="relative py-24 md:py-32">
       <div className="max-w-7xl mx-auto px-6">
-        {/* Section header */}
         <div className="text-center mb-16 scroll-reveal">
           <span className="text-xs font-medium text-gold tracking-[0.25em] uppercase">What We Cover</span>
           <h2 className="font-display font-bold text-white mt-3"
@@ -404,23 +1227,17 @@ function Pillars() {
           </p>
         </div>
 
-        {/* Cards grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {pillars.map((p, i) => (
             <div key={p.title}
                  className={`card-lift gold-border-glow group relative rounded-2xl bg-charcoal-700/50 backdrop-blur-sm p-8 cursor-default overflow-hidden ${
                    i >= 3 ? 'lg:col-span-1 sm:col-span-1' : ''
-                 } ${i === 3 ? 'lg:col-start-1 lg:ml-auto lg:max-w-full sm:col-start-1' : ''} scroll-reveal`}
-                 style={{ animationDelay: `${i * 0.05}s` }}>
-              {/* Gradient background */}
+                 } scroll-reveal`}
+                 style={{ transitionDelay: `${i * 50}ms` }}>
               <div className={`absolute inset-0 bg-gradient-to-br ${p.color} opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-2xl`} />
-
-              {/* Icon */}
               <div className="relative z-10 w-12 h-12 rounded-xl bg-gold/10 border border-gold/20 flex items-center justify-center mb-5 group-hover:bg-gold/20 transition-colors duration-200">
                 <i data-lucide={p.icon} className="w-6 h-6 text-gold" />
               </div>
-
-              {/* Text */}
               <h3 className="relative z-10 font-display font-semibold text-white text-lg mb-3">{p.title}</h3>
               <p className="relative z-10 text-sm text-smoke leading-relaxed">{p.desc}</p>
             </div>
@@ -431,112 +1248,78 @@ function Pillars() {
   );
 }
 
-/* ─── Video Showcase ─── */
-function VideoShowcase() {
-  const shorts = [
-    { title: 'AI Will Change Dubai Forever', views: '12K views' },
-    { title: 'Real Estate Bubble or Boom?', views: '8.5K views' },
-    { title: 'Why UAE Attracts Global Talent', views: '15K views' },
-    { title: 'The Geopolitics of Oil in 2026', views: '9.2K views' },
-    { title: 'Construction Tech Revolution', views: '6.8K views' },
+/* ═══════════════════════════════════════════════════════════════════
+   SOCIAL WALL
+   ═══════════════════════════════════════════════════════════════════ */
+
+function SocialWall() {
+  const items = [
+    { platform: 'youtube', height: 'h-56', title: 'Subscribe for in-depth analysis on global markets, AI trends, and Dubai insights.', cta: 'Watch on YouTube' },
+    { platform: 'instagram', height: 'h-72', title: 'Behind-the-scenes, visual stories, and quick takes on trending topics.', cta: 'Follow on Instagram' },
+    { platform: 'x', height: 'h-48', title: 'Real-time commentary on breaking news, market moves, and geopolitical shifts.', cta: 'Follow on X' },
+    { platform: 'tiktok', height: 'h-64', title: 'Short-form insights — the big ideas, distilled into 60 seconds.', cta: 'Coming to TikTok' },
+    { platform: 'youtube', height: 'h-44', title: 'Expert interviews dropping every week — subscribe to never miss one.', cta: 'Subscribe' },
+    { platform: 'instagram', height: 'h-52', title: 'Polls, Q&A, and community conversations about the topics that matter.', cta: 'Join the Community' },
   ];
 
-  const carouselRef = useRef(null);
-
-  const scroll = (dir) => {
-    if (carouselRef.current) {
-      carouselRef.current.scrollBy({ left: dir * 260, behavior: 'smooth' });
-    }
+  const platformMeta = {
+    youtube: { Icon: YouTubeIcon, color: 'from-red-900/30 to-red-950/20', accent: 'text-red-400', link: CONFIG.SOCIAL_LINKS.youtube },
+    instagram: { Icon: InstagramIcon, color: 'from-purple-900/30 via-pink-900/20 to-orange-900/20', accent: 'text-pink-400', link: CONFIG.SOCIAL_LINKS.instagram },
+    x: { Icon: XIcon, color: 'from-neutral-800/50 to-neutral-900/30', accent: 'text-white/70', link: CONFIG.SOCIAL_LINKS.x },
+    tiktok: { Icon: TikTokIcon, color: 'from-cyan-900/30 to-black/20', accent: 'text-cyan-400', link: CONFIG.SOCIAL_LINKS.tiktok },
   };
 
   return (
-    <section id="episodes" className="relative py-24 md:py-32 bg-charcoal-800/50">
+    <section className="relative py-24 md:py-32">
       <div className="max-w-7xl mx-auto px-6">
-        {/* Header */}
         <div className="text-center mb-16 scroll-reveal">
-          <span className="text-xs font-medium text-gold tracking-[0.25em] uppercase">Watch Now</span>
+          <span className="text-xs font-medium text-gold tracking-[0.25em] uppercase">Stay Connected</span>
           <h2 className="font-display font-bold text-white mt-3"
               style={{ fontSize: 'clamp(1.75rem, 1.2rem + 2vw, 3rem)' }}>
-            Video Showcase
+            Social Wall
           </h2>
+          <p className="text-smoke mt-4 max-w-xl mx-auto" style={{ fontSize: 'clamp(0.95rem, 0.9rem + 0.25vw, 1.1rem)' }}>
+            Follow Rine Talks across every platform — each one offers a unique angle.
+          </p>
         </div>
 
-        {/* Featured Episode */}
-        <div className="mb-16 scroll-reveal">
-          <h3 className="text-sm font-medium text-gold uppercase tracking-widest mb-4">Featured Episode</h3>
-          <div className="relative rounded-2xl overflow-hidden bg-charcoal-700 gold-border-glow">
-            <div className="aspect-video bg-charcoal-600 flex items-center justify-center relative group cursor-pointer">
-              {/* Placeholder thumbnail */}
-              <div className="absolute inset-0 bg-gradient-to-br from-charcoal-700 via-charcoal-800 to-charcoal-900" />
-              <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
-                {/* Play button */}
-                <div className="w-20 h-20 rounded-full bg-gold/90 flex items-center justify-center group-hover:bg-gold group-hover:scale-110 transition-all duration-300 shadow-lg shadow-gold/20">
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="#0d0d0d"><path d="M8 5v14l11-7z"/></svg>
-                </div>
-                <div className="mt-6 text-center">
-                  <p className="text-lg md:text-xl font-display font-semibold text-white">The Future of Dubai Real Estate in 2026</p>
-                  <p className="text-sm text-smoke mt-2">Episode 47 · 42 min · Rine Talks</p>
-                </div>
-              </div>
-              {/* Corner badge */}
-              <div className="absolute top-4 left-4 z-10 px-3 py-1 bg-gold/90 text-charcoal-900 text-xs font-bold rounded-md uppercase tracking-wider">
-                Latest
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Latest Shorts Carousel */}
-        <div className="scroll-reveal">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-sm font-medium text-gold uppercase tracking-widest">Latest Shorts</h3>
-            <div className="flex gap-2">
-              <button onClick={() => scroll(-1)} aria-label="Scroll left"
-                      className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-white hover:bg-white/5 hover:border-gold/30 transition-all duration-200">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
-              </button>
-              <button onClick={() => scroll(1)} aria-label="Scroll right"
-                      className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-white hover:bg-white/5 hover:border-gold/30 transition-all duration-200">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 18l6-6-6-6"/></svg>
-              </button>
-            </div>
-          </div>
-
-          <div ref={carouselRef} className="flex gap-4 overflow-x-auto hide-scrollbar pb-4 snap-x snap-mandatory">
-            {shorts.map((s, i) => (
-              <div key={i} className="flex-none w-56 md:w-64 snap-start">
-                <div className="card-lift gold-border-glow rounded-2xl overflow-hidden bg-charcoal-700/60 cursor-pointer group">
-                  {/* Thumbnail */}
-                  <div className="aspect-[9/16] bg-gradient-to-b from-charcoal-600 to-charcoal-800 relative flex items-center justify-center">
-                    {/* Play icon */}
-                    <div className="w-14 h-14 rounded-full bg-gold/20 flex items-center justify-center group-hover:bg-gold/40 transition-all duration-200 border border-gold/30">
-                      <svg width="22" height="22" viewBox="0 0 24 24" fill="#c9a84c"><path d="M8 5v14l11-7z"/></svg>
-                    </div>
-                    {/* Shorts badge */}
-                    <div className="absolute top-3 left-3 px-2 py-0.5 bg-red-600 text-white text-[10px] font-bold rounded uppercase tracking-wider">
-                      Shorts
-                    </div>
+        <div className="masonry-grid scroll-reveal">
+          {items.map((item, i) => {
+            const meta = platformMeta[item.platform];
+            return (
+              <a key={i} href={meta.link} target="_blank" rel="noopener noreferrer"
+                 className="block group">
+                <div className={`card-lift gold-border-glow rounded-xl overflow-hidden bg-gradient-to-br ${meta.color} ${item.height} p-6 flex flex-col justify-between relative`}>
+                  <div className="flex items-center gap-2">
+                    <meta.Icon size={16} className={meta.accent} />
+                    <span className={`text-xs font-semibold uppercase tracking-wider ${meta.accent}`}>
+                      {item.platform === 'x' ? 'X / Twitter' : item.platform.charAt(0).toUpperCase() + item.platform.slice(1)}
+                    </span>
                   </div>
-                  {/* Info */}
-                  <div className="p-4">
-                    <p className="text-sm font-medium text-white leading-snug line-clamp-2">{s.title}</p>
-                    <p className="text-xs text-smoke mt-1.5">{s.views}</p>
+                  <div>
+                    <p className="text-sm text-white/70 leading-relaxed mb-3">{item.title}</p>
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gold group-hover:text-gold-light transition-colors">
+                      {item.cta}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </span>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              </a>
+            );
+          })}
         </div>
       </div>
     </section>
   );
 }
 
-/* ─── About the Host ─── */
+/* ═══════════════════════════════════════════════════════════════════
+   ABOUT THE HOST
+   ═══════════════════════════════════════════════════════════════════ */
+
 function AboutHost() {
   return (
     <section id="about" className="relative py-24 md:py-32 overflow-hidden">
-      {/* Background image */}
       <div className="absolute inset-0">
         <img src="./assets/about-bg.png" alt="" className="w-full h-full object-cover opacity-20" />
         <div className="absolute inset-0 bg-gradient-to-r from-charcoal-900 via-charcoal-900/90 to-charcoal-900/70" />
@@ -555,7 +1338,6 @@ function AboutHost() {
                   <p className="text-xs text-smoke uppercase tracking-widest">Host & Creator</p>
                 </div>
               </div>
-              {/* Decorative corner */}
               <div className="absolute -bottom-3 -right-3 w-24 h-24 border-r-2 border-b-2 border-gold/30 rounded-br-2xl" />
             </div>
           </div>
@@ -582,20 +1364,25 @@ function AboutHost() {
 
             {/* Social links */}
             <div className="flex items-center gap-4 mt-8">
-              <a href="https://youtube.com/@rinetalks" target="_blank" rel="noopener noreferrer"
+              <a href={CONFIG.SOCIAL_LINKS.youtube} target="_blank" rel="noopener noreferrer"
                  className="w-11 h-11 rounded-full border border-white/15 flex items-center justify-center text-smoke hover:text-gold hover:border-gold/40 transition-all duration-200"
                  aria-label="YouTube">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                <YouTubeIcon size={18} />
               </a>
-              <a href="#" target="_blank" rel="noopener noreferrer"
+              <a href={CONFIG.SOCIAL_LINKS.instagram} target="_blank" rel="noopener noreferrer"
                  className="w-11 h-11 rounded-full border border-white/15 flex items-center justify-center text-smoke hover:text-gold hover:border-gold/40 transition-all duration-200"
-                 aria-label="LinkedIn">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                 aria-label="Instagram">
+                <InstagramIcon size={18} />
               </a>
-              <a href="#" target="_blank" rel="noopener noreferrer"
+              <a href={CONFIG.SOCIAL_LINKS.x} target="_blank" rel="noopener noreferrer"
                  className="w-11 h-11 rounded-full border border-white/15 flex items-center justify-center text-smoke hover:text-gold hover:border-gold/40 transition-all duration-200"
                  aria-label="X / Twitter">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                <XIcon size={16} />
+              </a>
+              <a href={CONFIG.SOCIAL_LINKS.tiktok} target="_blank" rel="noopener noreferrer"
+                 className="w-11 h-11 rounded-full border border-white/15 flex items-center justify-center text-smoke hover:text-gold hover:border-gold/40 transition-all duration-200"
+                 aria-label="TikTok">
+                <TikTokIcon size={18} />
               </a>
             </div>
           </div>
@@ -605,7 +1392,10 @@ function AboutHost() {
   );
 }
 
-/* ─── Newsletter ─── */
+/* ═══════════════════════════════════════════════════════════════════
+   NEWSLETTER
+   ═══════════════════════════════════════════════════════════════════ */
+
 function Newsletter() {
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -664,30 +1454,54 @@ function Newsletter() {
   );
 }
 
-/* ─── Footer ─── */
+/* ═══════════════════════════════════════════════════════════════════
+   FOOTER
+   ═══════════════════════════════════════════════════════════════════ */
+
 function Footer() {
   return (
     <footer className="border-t border-white/5 py-12">
       <div className="max-w-7xl mx-auto px-6">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex flex-col items-center md:items-start gap-3">
-            <RineTalksLogo className="h-7 w-auto" />
-            <p className="text-xs text-smoke-dark">Deep Conversations. Real Insights.</p>
+        <div className="flex flex-col items-center gap-8">
+          {/* Top row */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6 w-full">
+            <div className="flex flex-col items-center md:items-start gap-3">
+              <RineTalksLogo className="h-7 w-auto" />
+              <p className="text-xs text-smoke-dark">Deep Conversations. Real Insights.</p>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-smoke">
+              <a href="#" className="hover:text-gold transition-colors duration-200">Home</a>
+              <a href="#pillars" className="hover:text-gold transition-colors duration-200">Topics</a>
+              <a href="#content-hub" className="hover:text-gold transition-colors duration-200">Content</a>
+              <a href="#episodes" className="hover:text-gold transition-colors duration-200">Episodes</a>
+              <a href="#about" className="hover:text-gold transition-colors duration-200">About</a>
+              <a href="#newsletter" className="hover:text-gold transition-colors duration-200">Subscribe</a>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-smoke">
-            <a href="#pillars" className="hover:text-gold transition-colors duration-200">Topics</a>
-            <a href="#episodes" className="hover:text-gold transition-colors duration-200">Episodes</a>
-            <a href="#about" className="hover:text-gold transition-colors duration-200">About</a>
-            <a href="#newsletter" className="hover:text-gold transition-colors duration-200">Subscribe</a>
+          {/* Social row */}
+          <div className="flex items-center gap-4">
+            {[
+              { href: CONFIG.SOCIAL_LINKS.youtube, Icon: YouTubeIcon, label: 'YouTube' },
+              { href: CONFIG.SOCIAL_LINKS.instagram, Icon: InstagramIcon, label: 'Instagram' },
+              { href: CONFIG.SOCIAL_LINKS.x, Icon: XIcon, label: 'X' },
+              { href: CONFIG.SOCIAL_LINKS.tiktok, Icon: TikTokIcon, label: 'TikTok' },
+            ].map(({ href, Icon, label }) => (
+              <a key={label} href={href} target="_blank" rel="noopener noreferrer"
+                 className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center text-smoke hover:text-gold hover:border-gold/30 transition-all duration-200"
+                 aria-label={label}>
+                <Icon size={16} />
+              </a>
+            ))}
           </div>
 
-          <div className="text-center md:text-right">
-            <p className="text-xs text-smoke-dark">
-              &copy; 2026 Rine Talks. All rights reserved.
-            </p>
+          {/* Bottom row */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 text-xs text-smoke-dark border-t border-white/5 pt-6 w-full">
+            <p>&copy; 2026 Rine Talks. All rights reserved.</p>
+            <span className="hidden sm:inline">·</span>
             <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer"
-               className="text-xs text-smoke-dark hover:text-gold transition-colors duration-200 mt-1 inline-block">
+               className="hover:text-gold transition-colors duration-200">
               Created with Perplexity Computer
             </a>
           </div>
@@ -697,10 +1511,14 @@ function Footer() {
   );
 }
 
-/* ─── App ─── */
+/* ═══════════════════════════════════════════════════════════════════
+   APP
+   ═══════════════════════════════════════════════════════════════════ */
+
 function App() {
+  useScrollReveal();
+
   useEffect(() => {
-    // Initialize Lucide icons after render
     if (window.lucide) {
       window.lucide.createIcons();
     }
@@ -712,8 +1530,12 @@ function App() {
       <main>
         <Hero />
         <GoldDivider />
+        <ContentHub />
+        <GoldDivider />
+        <YouTubeShowcase />
         <Pillars />
-        <VideoShowcase />
+        <GoldDivider />
+        <SocialWall />
         <AboutHost />
         <GoldDivider />
         <Newsletter />
